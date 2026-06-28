@@ -8,20 +8,39 @@ echo "=================================================="
 echo "          MOBILE NAS STARTUP DAEMON               "
 echo "=================================================="
 
-# Check and activate local virtual environment if it exists
-if [ -d "$SCRIPT_DIR/venv" ]; then
-    PYTHON_BIN="$SCRIPT_DIR/venv/bin/python"
-    echo "[*] Virtual environment detected: Using local venv Python"
-else
-    PYTHON_BIN="python3"
-    echo "[!] Virtual environment NOT detected: Falling back to system python3"
+# Check if server is already running
+PID_FILE="$SCRIPT_DIR/nas.pid"
+if [ -f "$PID_FILE" ]; then
+    OLD_PID=$(cat "$PID_FILE")
+    if kill -0 "$OLD_PID" 2>/dev/null; then
+        echo "[!] Mobile NAS is already running (PID: $OLD_PID)"
+        echo "[*] Use 'kill $OLD_PID' to stop it before running again."
+        exit 1
+    fi
 fi
 
-# Print startup info
-echo "[*] Initializing server bootstrapper..."
-echo "[*] Access point will be on port 8080"
-echo "--------------------------------------------------"
+# Source virtual environment
+if [ -f "$SCRIPT_DIR/venv/bin/activate" ]; then
+    source "$SCRIPT_DIR/venv/bin/activate"
+    echo "[*] Activated virtual environment"
+else
+    echo "[!] Virtual environment activate script not found. Using system environment."
+fi
 
-# Run the Python NAS server, forwarding all CLI arguments (like -d /root/downloads)
-# Using exec ensures CTRL+C signal is passed directly to Python for clean exit
-exec "$PYTHON_BIN" "$SCRIPT_DIR/main.py" "$@"
+# Log file config
+LOG_FILE="$SCRIPT_DIR/nas.log"
+
+# Run the Python NAS server in detached mode (in the background)
+echo "[*] Launching NAS Server in detached mode..."
+nohup python "$SCRIPT_DIR/main.py" "$@" > "$LOG_FILE" 2>&1 &
+NEW_PID=$!
+
+# Save PID to file
+echo "$NEW_PID" > "$PID_FILE"
+
+echo "--------------------------------------------------"
+echo "[+] Mobile NAS successfully started!"
+echo "[+] Process ID (PID): $NEW_PID"
+echo "[+] Logs are written to: $LOG_FILE"
+echo "[*] To stop the server, run: kill $NEW_PID"
+echo "=================================================="
