@@ -4,9 +4,17 @@ import shutil
 import psutil
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
+import mimetypes
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+
+# Initialize mimetypes database
+mimetypes.init()
+
+# Custom FileResponse to increase chunk size to 1MB for fast local network downloads
+class FastFileResponse(FileResponse):
+    chunk_size = 1024 * 1024  # 1MB chunks (Starlette default is 64KB)
 
 # Initialize FastAPI App
 app = FastAPI(title="Mobile NAS File Server")
@@ -178,17 +186,27 @@ async def upload_files(path: str = Form(""), files: list[UploadFile] = File(...)
 
 # 4. API: Download File
 @app.get("/api/download")
-async def download_file(path: str):
+async def download_file(path: str, inline: bool = False):
     target_file = get_safe_path(path)
     if not target_file.exists():
         raise HTTPException(status_code=404, detail="File not found")
     if not target_file.is_file():
         raise HTTPException(status_code=400, detail="Requested path is not a file")
         
-    return FileResponse(
+    # Guess mime type dynamically
+    mime_type, _ = mimetypes.guess_type(str(target_file))
+    if not mime_type:
+        mime_type = "application/octet-stream"
+        
+    headers = {}
+    if inline:
+        headers["Content-Disposition"] = "inline"
+        
+    return FastFileResponse(
         path=target_file,
-        filename=target_file.name,
-        media_type="application/octet-stream"
+        filename=target_file.name if not inline else None,
+        media_type=mime_type,
+        headers=headers
     )
 
 # 5. API: Delete File/Folder

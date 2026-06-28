@@ -500,7 +500,7 @@ async function openPreview(item) {
     container.innerHTML = ''; // reset preview layout
     
     const encodedPath = encodeURIComponent(item.path);
-    const mediaUrl = `/api/download?path=${encodedPath}`;
+    const mediaUrl = `/api/download?path=${encodedPath}&inline=true`;
     
     if (item.type === 'image') {
         const img = document.createElement('img');
