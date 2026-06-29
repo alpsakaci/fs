@@ -127,12 +127,19 @@ function setupEventHandlers() {
         }, false);
     });
 
-    // Handle dropped files
-    dropzone.addEventListener('drop', (e) => {
-        const dt = e.dataTransfer;
-        const files = dt.files;
-        if (files.length > 0) {
-            uploadFiles(files);
+    // Handle dropped files/folders
+    dropzone.addEventListener('drop', async (e) => {
+        const items = e.dataTransfer.items;
+        if (items && items.length > 0) {
+            const files = await getAllFileEntries(items);
+            if (files.length > 0) {
+                uploadFiles(files);
+            }
+        } else {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                uploadFiles(files);
+            }
         }
     }, false);
 }
@@ -409,7 +416,10 @@ function uploadFiles(files) {
     const formData = new FormData();
     formData.append('path', currentPath);
     for (let i = 0; i < files.length; i++) {
-        formData.append('files', files[i]);
+        const file = files[i];
+        formData.append('files', file);
+        const relPath = file.relativePath || file.name;
+        formData.append('relative_paths', relPath);
     }
     
     uploadXhr = new XMLHttpRequest();
@@ -655,4 +665,67 @@ function formatTimeDuration(seconds) {
     const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return minutes + 'm ' + secs + 's';
+}
+
+// Recursively resolve all file entries from drop event items (supports folder uploads)
+async function getAllFileEntries(dataTransferItems) {
+    const fileEntries = [];
+    const queue = [];
+    
+    for (let i = 0; i < dataTransferItems.length; i++) {
+        const item = dataTransferItems[i];
+        if (item.kind === 'file') {
+            const entry = item.webkitGetAsEntry();
+            if (entry) {
+                queue.push({ entry, path: '' });
+            }
+        }
+    }
+    
+    while (queue.length > 0) {
+        const { entry, path } = queue.shift();
+        if (entry.isFile) {
+            try {
+                const file = await getFileFromEntry(entry);
+                file.relativePath = path ? `${path}/${entry.name}` : entry.name;
+                fileEntries.push(file);
+            } catch (err) {
+                console.error("Failed to read file entry", entry, err);
+            }
+        } else if (entry.isDirectory) {
+            try {
+                const dirReader = entry.createReader();
+                const entries = await readAllEntries(dirReader);
+                for (const childEntry of entries) {
+                    queue.push({ entry: childEntry, path: path ? `${path}/${entry.name}` : entry.name });
+                }
+            } catch (err) {
+                console.error("Failed to read directory entry", entry, err);
+            }
+        }
+    }
+    return fileEntries;
+}
+
+function getFileFromEntry(fileEntry) {
+    return new Promise((resolve, reject) => {
+        fileEntry.file(resolve, reject);
+    });
+}
+
+function readAllEntries(dirReader) {
+    return new Promise((resolve, reject) => {
+        let allEntries = [];
+        const read = () => {
+            dirReader.readEntries((entries) => {
+                if (entries.length === 0) {
+                    resolve(allEntries);
+                } else {
+                    allEntries = allEntries.concat(entries);
+                    read();
+                }
+            }, reject);
+        };
+        read();
+    });
 }

@@ -154,27 +154,43 @@ async def create_directory(path: str = Form(""), name: str = Form(...)):
 
 # 3. API: Upload File(s)
 @app.post("/api/upload")
-async def upload_files(path: str = Form(""), files: list[UploadFile] = File(...)):
+async def upload_files(
+    path: str = Form(""), 
+    files: list[UploadFile] = File(...),
+    relative_paths: list[str] = Form(None)
+):
     target_dir = get_safe_path(path)
     if not target_dir.is_dir():
         raise HTTPException(status_code=400, detail="Target path is not a directory")
         
     saved_files = []
     try:
-        for file in files:
-            # Prevent empty or malicious file names
+        for idx, file in enumerate(files):
             filename = file.filename
-            if not filename or "/" in filename or "\\" in filename:
+            if not filename:
                 continue
                 
-            dest_path = target_dir / filename
+            # Reconstruct relative folder path safely if provided
+            if relative_paths and idx < len(relative_paths):
+                rel_path_str = relative_paths[idx].lstrip("/")
+                # Filter out path traversal segments
+                parts = [p for p in rel_path_str.split('/') if p and p not in ('.', '..')]
+                if parts:
+                    dest_path = target_dir / Path(*parts)
+                else:
+                    dest_path = target_dir / filename
+            else:
+                dest_path = target_dir / filename
+                
+            # Create subfolders if they do not exist
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
             
             # Save file in 1MB chunks
             with open(dest_path, "wb") as buffer:
                 while chunk := await file.read(1024 * 1024):
                     buffer.write(chunk)
             
-            saved_files.append(filename)
+            saved_files.append(str(dest_path.relative_to(target_dir)))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
         
