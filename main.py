@@ -3,7 +3,7 @@ import sys
 import shutil
 import psutil
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 import mimetypes
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
@@ -155,14 +155,17 @@ async def create_directory(path: str = Form(""), name: str = Form(...)):
 # 3. API: Upload File(s)
 @app.post("/api/upload")
 async def upload_files(
+    request: Request,
     path: str = Form(""), 
-    files: list[UploadFile] = File(...),
-    relative_paths: list[str] = Form(None)
+    files: list[UploadFile] = File(...)
 ):
     target_dir = get_safe_path(path)
     if not target_dir.is_dir():
         raise HTTPException(status_code=400, detail="Target path is not a directory")
         
+    form = await request.form()
+    relative_paths = form.getlist("relative_paths")
+    
     saved_files = []
     try:
         for idx, file in enumerate(files):
@@ -173,6 +176,8 @@ async def upload_files(
             # Reconstruct relative folder path safely if provided
             if relative_paths and idx < len(relative_paths):
                 rel_path_str = relative_paths[idx].lstrip("/")
+                # Convert Windows backslashes to Unix style forward slashes
+                rel_path_str = rel_path_str.replace("\\", "/")
                 # Filter out path traversal segments
                 parts = [p for p in rel_path_str.split('/') if p and p not in ('.', '..')]
                 if parts:
