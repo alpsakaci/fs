@@ -132,14 +132,20 @@ function setupEventHandlers() {
         e.preventDefault();
         e.stopPropagation();
         
+        console.log("[NAS] Drop event detected.");
         const items = e.dataTransfer.items;
         if (items && items.length > 0) {
+            console.log(`[NAS] Dragged items count: ${items.length}`);
             const files = await getAllFileEntries(items);
+            console.log(`[NAS] Resolved files for upload count: ${files.length}`, files);
             if (files.length > 0) {
                 uploadFiles(files);
+            } else {
+                console.warn("[NAS] No files resolved. Directory might be empty or unreadable.");
             }
         } else {
             const files = e.dataTransfer.files;
+            console.log(`[NAS] No items list (fallback). Files count: ${files.length}`);
             if (files.length > 0) {
                 uploadFiles(files);
             }
@@ -416,6 +422,7 @@ function uploadFiles(files) {
     
     progressContainer.style.display = 'block';
     
+    console.log(`[NAS] Beginning upload of ${files.length} items to directory path: "${currentPath}"`);
     const formData = new FormData();
     formData.append('path', currentPath);
     for (let i = 0; i < files.length; i++) {
@@ -423,6 +430,8 @@ function uploadFiles(files) {
         // Handle both File objects (file input) and { file, relativePath } objects (drop zone)
         const fileObj = item.file || item;
         const relPath = item.relativePath || fileObj.name;
+        
+        console.log(`[NAS] Mapping item #${i}: relativePath="${relPath}", size=${fileObj.size} bytes`);
         
         formData.append('files', fileObj);
         formData.append('relative_paths', relPath);
