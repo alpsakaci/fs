@@ -106,6 +106,16 @@ function setupEventHandlers() {
         }
     });
 
+    // 7b. Folder Input Upload Trigger (utilizes webkitRelativePath natively)
+    const folderInput = document.getElementById('folder-input');
+    if (folderInput) {
+        folderInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                uploadFiles(e.target.files);
+            }
+        });
+    }
+
     // 8. Drag and Drop Upload Event Hooks
     const dropzone = document.getElementById('dropzone');
     

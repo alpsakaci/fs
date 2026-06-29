@@ -12,6 +12,24 @@ from fastapi.middleware.cors import CORSMiddleware
 # Initialize mimetypes database
 mimetypes.init()
 
+# Add manual fallbacks for common media files to guarantee streaming works on Linux/Android even if OS mime-types are missing
+mimetypes.add_type('video/mp4', '.mp4')
+mimetypes.add_type('video/webm', '.webm')
+mimetypes.add_type('video/x-matroska', '.mkv')
+mimetypes.add_type('audio/mpeg', '.mp3')
+mimetypes.add_type('audio/ogg', '.ogg')
+mimetypes.add_type('audio/wav', '.wav')
+mimetypes.add_type('audio/x-m4a', '.m4a')
+mimetypes.add_type('image/jpeg', '.jpg')
+mimetypes.add_type('image/jpeg', '.jpeg')
+mimetypes.add_type('image/png', '.png')
+mimetypes.add_type('image/gif', '.gif')
+mimetypes.add_type('image/webp', '.webp')
+mimetypes.add_type('image/svg+xml', '.svg')
+mimetypes.add_type('text/plain', '.txt')
+mimetypes.add_type('text/markdown', '.md')
+mimetypes.add_type('application/pdf', '.pdf')
+
 # Custom FileResponse to increase chunk size to 1MB for fast local network downloads
 class FastFileResponse(FileResponse):
     chunk_size = 1024 * 1024  # 1MB chunks (Starlette default is 64KB)
