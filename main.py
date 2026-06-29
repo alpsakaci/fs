@@ -248,6 +248,46 @@ async def download_file(path: str, inline: bool = False):
         headers=headers
     )
 
+
+# Subtitle SRT to VTT converter helper
+def convert_srt_to_vtt(srt_content: str) -> str:
+    vtt_lines = ["WEBVTT\n"]
+    for line in srt_content.splitlines():
+        if "-->" in line:
+            line = line.replace(",", ".")
+        vtt_lines.append(line)
+    return "\n".join(vtt_lines)
+
+# API: Serve subtitle files converted to VTT on the fly for browser compatibility
+@app.get("/api/subtitle")
+async def get_subtitle(path: str):
+    target_file = get_safe_path(path)
+    if not target_file.exists() or not target_file.is_file():
+        raise HTTPException(status_code=404, detail="Subtitle file not found")
+        
+    ext = target_file.suffix.lower()
+    if ext not in ('.srt', '.vtt'):
+        raise HTTPException(status_code=400, detail="Unsupported subtitle format")
+        
+    try:
+        # Try decoding as UTF-8 first, fallback to Turkish Windows ANSI (windows-1254) if it fails
+        raw_bytes = target_file.read_bytes()
+        try:
+            content = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            try:
+                content = raw_bytes.decode("windows-1254")
+            except UnicodeDecodeError:
+                content = raw_bytes.decode("latin-1", errors="replace")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read subtitle file: {str(e)}")
+        
+    if ext == '.srt':
+        content = convert_srt_to_vtt(content)
+        
+    from fastapi.responses import Response
+    return Response(content=content, media_type="text/vtt")
+
 # 5. API: Delete File/Folder
 @app.delete("/api/delete")
 async def delete_item(path: str = Form(...)):

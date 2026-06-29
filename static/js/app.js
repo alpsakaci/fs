@@ -106,15 +106,6 @@ function setupEventHandlers() {
         }
     });
 
-    // 7b. Folder Input Upload Trigger (utilizes webkitRelativePath natively)
-    const folderInput = document.getElementById('folder-input');
-    if (folderInput) {
-        folderInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                uploadFiles(e.target.files);
-            }
-        });
-    }
 
     // 8. Drag and Drop Upload Event Hooks
     const dropzone = document.getElementById('dropzone');
@@ -537,6 +528,19 @@ async function openPreview(item) {
     const encodedPath = encodeURIComponent(item.path);
     const mediaUrl = `/api/download?path=${encodedPath}&inline=true`;
     
+    // Find matching subtitles in the current folder sharing the same base name
+    const extIdx = item.name.lastIndexOf('.');
+    const baseName = extIdx !== -1 ? item.name.substring(0, extIdx) : item.name;
+    const subExtensions = ['.srt', '.vtt'];
+    const matchingSubtitles = filesList.filter(f => {
+        if (f.is_dir) return false;
+        const dotIdx = f.name.lastIndexOf('.');
+        if (dotIdx === -1) return false;
+        const fileExt = f.name.substring(dotIdx).toLowerCase();
+        if (!subExtensions.includes(fileExt)) return false;
+        return f.name.toLowerCase().startsWith(baseName.toLowerCase());
+    });
+    
     if (item.type === 'image') {
         const img = document.createElement('img');
         img.src = mediaUrl;
@@ -548,6 +552,26 @@ async function openPreview(item) {
         video.src = mediaUrl;
         video.controls = true;
         video.autoplay = true;
+        video.crossOrigin = "anonymous"; // Essential for standard WebVTT tracks to render properly
+        
+        // Dynamically add found subtitles
+        matchingSubtitles.forEach((sub, idx) => {
+            const track = document.createElement('track');
+            track.kind = 'subtitles';
+            
+            // Extract suffix like .en or .tr if present, e.g., movie.en.srt -> EN
+            const nameNoExt = sub.name.substring(0, sub.name.lastIndexOf('.'));
+            const suffix = nameNoExt.substring(baseName.length).replace(/^\./, '').toUpperCase() || 'Default';
+            
+            track.label = suffix;
+            track.srclang = suffix.toLowerCase().substring(0, 2);
+            track.src = `/api/subtitle?path=${encodeURIComponent(sub.path)}`;
+            if (idx === 0) {
+                track.default = true;
+            }
+            video.appendChild(track);
+        });
+        
         container.appendChild(video);
         openModal('modal-preview');
     } else if (item.type === 'audio') {
