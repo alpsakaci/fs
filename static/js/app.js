@@ -524,6 +524,11 @@ async function openPreview(item) {
     dlBtn.href = `/api/download?path=${encodeURIComponent(item.path)}`;
     
     container.innerHTML = ''; // reset preview layout
+    const infoArea = document.getElementById('preview-info-area');
+    if (infoArea) {
+        infoArea.innerHTML = '';
+        infoArea.style.display = 'none';
+    }
     
     const encodedPath = encodeURIComponent(item.path);
     const mediaUrl = `/api/download?path=${encodedPath}&inline=true`;
@@ -532,7 +537,9 @@ async function openPreview(item) {
     const extIdx = item.name.lastIndexOf('.');
     const baseName = extIdx !== -1 ? item.name.substring(0, extIdx) : item.name;
     const subExtensions = ['.srt', '.vtt'];
-    const matchingSubtitles = filesList.filter(f => {
+    
+    // 1. Check for subtitle files sharing the same base name
+    let matchingSubtitles = filesList.filter(f => {
         if (f.is_dir) return false;
         const dotIdx = f.name.lastIndexOf('.');
         if (dotIdx === -1) return false;
@@ -540,6 +547,17 @@ async function openPreview(item) {
         if (!subExtensions.includes(fileExt)) return false;
         return f.name.toLowerCase().startsWith(baseName.toLowerCase());
     });
+    
+    // 2. Fallback: if no name match exists, grab any srt/vtt subtitle files in the same folder
+    if (matchingSubtitles.length === 0) {
+        matchingSubtitles = filesList.filter(f => {
+            if (f.is_dir) return false;
+            const dotIdx = f.name.lastIndexOf('.');
+            if (dotIdx === -1) return false;
+            const fileExt = f.name.substring(dotIdx).toLowerCase();
+            return subExtensions.includes(fileExt);
+        });
+    }
     
     if (item.type === 'image') {
         const img = document.createElement('img');
@@ -549,10 +567,50 @@ async function openPreview(item) {
         openModal('modal-preview');
     } else if (item.type === 'video') {
         const video = document.createElement('video');
-        video.src = mediaUrl;
         video.controls = true;
         video.autoplay = true;
-        video.crossOrigin = "anonymous"; // Essential for standard WebVTT tracks to render properly
+        video.style.width = '100%';
+        video.style.maxHeight = '60vh';
+        
+        // Detect native browser support
+        const ext = item.name.substring(item.name.lastIndexOf('.')).toLowerCase();
+        const nativeVideoExts = ['.mp4', '.webm', '.ogg'];
+        let noticeElement = null;
+        
+        if (!nativeVideoExts.includes(ext)) {
+            const notice = document.createElement('div');
+            notice.className = 'compatibility-notice';
+            notice.style.background = 'rgba(245, 158, 11, 0.15)';
+            notice.style.border = '1px solid rgba(245, 158, 11, 0.3)';
+            notice.style.padding = '0.85rem';
+            notice.style.borderRadius = '8px';
+            notice.style.marginTop = '1rem';
+            notice.style.marginBottom = '0.5rem';
+            notice.style.fontSize = '0.85rem';
+            notice.style.color = '#fcd34d';
+            notice.style.textAlign = 'left';
+            notice.style.width = '100%';
+            
+            // Build the absolute streaming address using window.location.host
+            const streamUrl = `http://${window.location.host}/api/download?path=${encodeURIComponent(item.path)}&inline=true`;
+            const vlcUrl = `vlc://${streamUrl}`;
+            
+            notice.innerHTML = `
+                <div style="font-weight: 700; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.35rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="stroke: #f59e0b;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4m0 4h.01"/></svg>
+                    Format Compatibility Notice
+                </div>
+                <div style="line-height: 1.4; opacity: 0.95;">
+                    The <strong>${ext.toUpperCase()}</strong> format is not natively supported by most browsers. 
+                    If playback fails, you can stream it directly using an external player like <strong>VLC</strong>:
+                </div>
+                <a href="${vlcUrl}" class="btn btn-secondary" style="margin-top: 0.65rem; padding: 0.4rem 0.85rem; font-size: 0.8rem; border-color: rgba(245, 158, 11, 0.4); display: inline-flex; align-items: center; gap: 0.35rem; color: #fef08a;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4 4m0 0L8 8m4-4v12"/></svg>
+                    Stream in VLC Player
+                </a>
+            `;
+            noticeElement = notice;
+        }
         
         // Dynamically add found subtitles
         matchingSubtitles.forEach((sub, idx) => {
@@ -565,14 +623,61 @@ async function openPreview(item) {
             
             track.label = suffix;
             track.srclang = suffix.toLowerCase().substring(0, 2);
-            track.src = `/api/subtitle?path=${encodeURIComponent(sub.path)}`;
+            
             if (idx === 0) {
                 track.default = true;
+                // Force show the track once it loads to bypass browser default-off settings
+                track.addEventListener('load', () => {
+                    if (track.track) {
+                        track.track.mode = 'showing';
+                    }
+                });
             }
+            
+            // Assign src and append track to video
+            track.src = `/api/subtitle?path=${encodeURIComponent(sub.path)}`;
             video.appendChild(track);
         });
         
+        // Finally, assign video src and append it to container
+        video.src = mediaUrl;
+        video.load();
+        
+        // Append video first so the player occupies the top main area (remains clean and black)
         container.appendChild(video);
+        
+        // Populate the dedicated infoArea below the black video body with warnings and status info
+        if (infoArea) {
+            let hasInfo = false;
+            
+            if (noticeElement) {
+                infoArea.appendChild(noticeElement);
+                hasInfo = true;
+            }
+            
+            // Append visual subtitle status banner below the notice
+            const infoDiv = document.createElement('div');
+            infoDiv.style.marginTop = '0.5rem';
+            infoDiv.style.fontSize = '0.85rem';
+            infoDiv.style.color = '#9ca3af';
+            infoDiv.style.textAlign = 'center';
+            infoDiv.style.width = '100%';
+            
+            if (matchingSubtitles.length > 0) {
+                const names = matchingSubtitles.map(s => s.name).join(', ');
+                infoDiv.innerHTML = `✔️ Loaded subtitles: <span style="color: #34d399; font-weight: 500;">${names}</span>`;
+            } else {
+                infoDiv.innerHTML = `ℹ️ No matching subtitle files (.srt/.vtt) found in this folder.`;
+            }
+            
+            infoArea.appendChild(infoDiv);
+            hasInfo = true;
+            
+            if (hasInfo) {
+                infoArea.style.display = 'block';
+            }
+        }
+        
         openModal('modal-preview');
     } else if (item.type === 'audio') {
         const audio = document.createElement('audio');
