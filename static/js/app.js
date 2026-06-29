@@ -129,6 +129,9 @@ function setupEventHandlers() {
 
     // Handle dropped files/folders
     dropzone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
         const items = e.dataTransfer.items;
         if (items && items.length > 0) {
             const files = await getAllFileEntries(items);
