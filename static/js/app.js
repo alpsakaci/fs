@@ -419,9 +419,12 @@ function uploadFiles(files) {
     const formData = new FormData();
     formData.append('path', currentPath);
     for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        formData.append('files', file);
-        const relPath = file.relativePath || file.name;
+        const item = files[i];
+        // Handle both File objects (file input) and { file, relativePath } objects (drop zone)
+        const fileObj = item.file || item;
+        const relPath = item.relativePath || fileObj.name;
+        
+        formData.append('files', fileObj);
         formData.append('relative_paths', relPath);
     }
     
@@ -690,8 +693,8 @@ async function getAllFileEntries(dataTransferItems) {
         if (entry.isFile) {
             try {
                 const file = await getFileFromEntry(entry);
-                file.relativePath = path ? `${path}/${entry.name}` : entry.name;
-                fileEntries.push(file);
+                const relPath = path ? `${path}/${entry.name}` : entry.name;
+                fileEntries.push({ file, relativePath: relPath });
             } catch (err) {
                 console.error("Failed to read file entry", entry, err);
             }
