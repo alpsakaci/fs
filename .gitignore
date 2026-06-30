@@ -28,3 +28,4 @@ shared/
 # Environment configurations
 .env
 .env.local
+nas.log
