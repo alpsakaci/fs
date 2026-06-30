@@ -5,6 +5,8 @@ let currentPath = '';
 let filesList = [];
 let targetItemPath = ''; // used for rename / delete operations
 let uploadXhr = null; // hold current upload request
+let draggedItem = null; // track currently dragged item for move operations
+
 
 // SVG Icons Dictionary
 const ICONS = {
@@ -113,6 +115,7 @@ function setupEventHandlers() {
     // Highlight dropzone on drag enter/over
     ['dragenter', 'dragover'].forEach(eventName => {
         dropzone.addEventListener(eventName, (e) => {
+            if (draggedItem) return; // Ignore internal drag operations
             e.preventDefault();
             e.stopPropagation();
             dropzone.classList.add('dragover');
@@ -122,6 +125,7 @@ function setupEventHandlers() {
     // Unhighlight dropzone on drag leave/drop
     ['dragleave', 'drop'].forEach(eventName => {
         dropzone.addEventListener(eventName, (e) => {
+            if (draggedItem) return; // Ignore internal drag operations
             e.preventDefault();
             e.stopPropagation();
             dropzone.classList.remove('dragover');
@@ -130,6 +134,7 @@ function setupEventHandlers() {
 
     // Handle dropped files/folders
     dropzone.addEventListener('drop', async (e) => {
+        if (draggedItem) return; // Ignore internal drops
         e.preventDefault();
         e.stopPropagation();
         
@@ -190,22 +195,132 @@ function renderFiles(items) {
     const grid = document.getElementById('file-grid');
     grid.innerHTML = '';
     
-    if (items.length === 0) {
-        grid.innerHTML = `
-            <div class="empty-explorer">
-                <svg class="empty-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.31c-.398 0-.781-.158-1.062-.44z"></path>
+    // Add Go Up (..) parent directory card if not in root
+    if (currentPath) {
+        const parentCard = document.createElement('div');
+        parentCard.className = 'file-card type-folder parent-directory-card';
+        parentCard.setAttribute('draggable', 'false');
+        
+        parentCard.innerHTML = `
+            <div class="file-icon" style="background: rgba(245, 158, 11, 0.1);">
+                <svg viewBox="0 0 24 24" style="fill: #f59e0b;">
+                    <path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zM12 11v4H9l3 3 3-3h-3v-4z"/>
                 </svg>
-                <h3>This folder is empty</h3>
-                <p>Drag files here or tap Upload to get started.</p>
+            </div>
+            <div class="file-info">
+                <div class="file-name">.. (Go Up)</div>
+                <div class="file-meta">
+                    <span>Parent Folder</span>
+                </div>
             </div>
         `;
+        
+        parentCard.addEventListener('click', () => {
+            const parts = currentPath.split('/');
+            parts.pop();
+            loadDirectory(parts.join('/'));
+        });
+        
+        parentCard.addEventListener('dragenter', (e) => {
+            if (draggedItem) {
+                e.preventDefault();
+                parentCard.classList.add('drag-hover');
+            }
+        });
+        
+        parentCard.addEventListener('dragover', (e) => {
+            if (draggedItem) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+            }
+        });
+        
+        parentCard.addEventListener('dragleave', () => {
+            parentCard.classList.remove('drag-hover');
+        });
+        
+        parentCard.addEventListener('drop', (e) => {
+            e.preventDefault();
+            parentCard.classList.remove('drag-hover');
+            if (draggedItem) {
+                const parts = currentPath.split('/');
+                parts.pop();
+                const parentPath = parts.join('/');
+                moveItem(draggedItem.path, parentPath);
+            }
+        });
+        
+        grid.appendChild(parentCard);
+    }
+    
+    if (items.length === 0) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'empty-explorer';
+        emptyDiv.style.gridColumn = '1 / -1';
+        emptyDiv.innerHTML = `
+            <svg class="empty-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.31c-.398 0-.781-.158-1.062-.44z"></path>
+            </svg>
+            <h3>This folder is empty</h3>
+            <p>Drag files here or tap Upload to get started.</p>
+        `;
+        grid.appendChild(emptyDiv);
         return;
     }
     
     items.forEach(item => {
         const card = document.createElement('div');
         card.className = `file-card type-${item.type}`;
+        card.setAttribute('draggable', 'true');
+        
+        // Drag source event handlers
+        card.addEventListener('dragstart', (e) => {
+            draggedItem = item;
+            card.classList.add('dragging');
+            document.body.classList.add('app-dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', item.path);
+        });
+        
+        card.addEventListener('dragend', () => {
+            card.classList.remove('dragging');
+            document.body.classList.remove('app-dragging');
+            draggedItem = null;
+            
+            // Clean up any hover states in grid
+            document.querySelectorAll('.file-card.type-folder').forEach(el => {
+                el.classList.remove('drag-hover');
+            });
+        });
+        
+        // Drag destination event handlers (only for directory cards)
+        if (item.is_dir) {
+            card.addEventListener('dragenter', (e) => {
+                if (draggedItem && draggedItem.path !== item.path) {
+                    e.preventDefault();
+                    card.classList.add('drag-hover');
+                }
+            });
+            
+            card.addEventListener('dragover', (e) => {
+                if (draggedItem && draggedItem.path !== item.path) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                }
+            });
+            
+            card.addEventListener('dragleave', () => {
+                card.classList.remove('drag-hover');
+            });
+            
+            card.addEventListener('drop', (e) => {
+                e.preventDefault();
+                card.classList.remove('drag-hover');
+                if (draggedItem && draggedItem.path !== item.path) {
+                    moveItem(draggedItem.path, item.path);
+                }
+            });
+        }
         
         // Build card body
         card.innerHTML = `
@@ -291,6 +406,33 @@ function renderBreadcrumbs(path) {
     rootItem.className = 'breadcrumb-item';
     rootItem.innerText = 'Shared Root';
     rootItem.addEventListener('click', () => loadDirectory(''));
+    
+    // Allow dropping onto Root if we are not currently in Root
+    if (currentPath !== '') {
+        rootItem.addEventListener('dragenter', (e) => {
+            if (draggedItem) {
+                e.preventDefault();
+                rootItem.classList.add('drag-hover');
+            }
+        });
+        rootItem.addEventListener('dragover', (e) => {
+            if (draggedItem) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+            }
+        });
+        rootItem.addEventListener('dragleave', () => {
+            rootItem.classList.remove('drag-hover');
+        });
+        rootItem.addEventListener('drop', (e) => {
+            e.preventDefault();
+            rootItem.classList.remove('drag-hover');
+            if (draggedItem) {
+                moveItem(draggedItem.path, '');
+            }
+        });
+    }
+    
     container.appendChild(rootItem);
     
     if (!path) {
@@ -319,6 +461,30 @@ function renderBreadcrumbs(path) {
             item.className = 'breadcrumb-item active';
         } else {
             item.addEventListener('click', () => loadDirectory(currentAccum));
+            
+            // Allow dropping onto parent directories
+            item.addEventListener('dragenter', (e) => {
+                if (draggedItem) {
+                    e.preventDefault();
+                    item.classList.add('drag-hover');
+                }
+            });
+            item.addEventListener('dragover', (e) => {
+                if (draggedItem) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                }
+            });
+            item.addEventListener('dragleave', () => {
+                item.classList.remove('drag-hover');
+            });
+            item.addEventListener('drop', (e) => {
+                e.preventDefault();
+                item.classList.remove('drag-hover');
+                if (draggedItem) {
+                    moveItem(draggedItem.path, currentAccum);
+                }
+            });
         }
         
         container.appendChild(item);
@@ -405,6 +571,30 @@ async function renameItem(path, newName) {
         
         closeModal('modal-rename');
         document.getElementById('rename-input').value = '';
+        loadDirectory(currentPath);
+        
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+// Move Item
+async function moveItem(srcPath, destDir) {
+    const formData = new FormData();
+    formData.append('src_path', srcPath);
+    formData.append('dest_dir', destDir);
+    
+    try {
+        const response = await fetch('/api/move', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || 'Move failed');
+        }
+        
         loadDirectory(currentPath);
         
     } catch (error) {

@@ -835,3 +835,37 @@ footer {
         width: 95%;
     }
 }
+
+/* Drag & Drop Moving visual states */
+.file-card.dragging {
+    opacity: 0.45;
+    border: 1px dashed var(--accent) !important;
+    background: rgba(99, 102, 241, 0.05) !important;
+    transform: scale(0.98);
+}
+
+.file-card.type-folder.drag-hover {
+    background: rgba(99, 102, 241, 0.18) !important;
+    border-color: var(--accent) !important;
+    transform: scale(1.03) translateY(-2px) !important;
+    box-shadow: 0 8px 25px rgba(99, 102, 241, 0.25) !important;
+}
+
+.breadcrumb-item.drag-hover {
+    color: #ffffff !important;
+    background: rgba(99, 102, 241, 0.25) !important;
+    padding: 2px 8px !important;
+    border-radius: 6px !important;
+    border: 1px dashed rgba(99, 102, 241, 0.5) !important;
+    transform: scale(1.05);
+}
+
+/* Flicker prevention */
+body.app-dragging .file-card * {
+    pointer-events: none !important;
+}
+
+body.app-dragging .breadcrumb-item * {
+    pointer-events: none !important;
+}
+

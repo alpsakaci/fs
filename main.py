@@ -341,6 +341,48 @@ async def rename_item(path: str = Form(...), new_name: str = Form(...)):
         
     return {"status": "success", "message": f"Successfully renamed to {new_name}"}
 
+# API: Move File/Folder
+@app.post("/api/move")
+async def move_item(src_path: str = Form(...), dest_dir: str = Form("")):
+    src = get_safe_path(src_path)
+    dest_parent = get_safe_path(dest_dir)
+    
+    if src == SHARED_PATH:
+        raise HTTPException(status_code=400, detail="Cannot move root shared directory")
+        
+    if not src.exists():
+        raise HTTPException(status_code=404, detail="Source item not found")
+        
+    if not dest_parent.exists():
+        raise HTTPException(status_code=404, detail="Destination directory not found")
+        
+    if not dest_parent.is_dir():
+        raise HTTPException(status_code=400, detail="Destination path is not a directory")
+        
+    dest_path = dest_parent / src.name
+    
+    try:
+        resolved_src = src.resolve()
+        resolved_dest = dest_path.resolve()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid paths: {str(e)}")
+        
+    if resolved_dest == resolved_src:
+        raise HTTPException(status_code=400, detail="Cannot move item to the same location")
+        
+    if src.is_dir() and resolved_dest.is_relative_to(resolved_src):
+        raise HTTPException(status_code=400, detail="Cannot move a directory inside itself")
+        
+    if dest_path.exists():
+        raise HTTPException(status_code=400, detail="An item with the same name already exists in the destination folder")
+        
+    try:
+        shutil.move(str(src), str(dest_path))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Move failed: {str(e)}")
+        
+    return {"status": "success", "message": f"Successfully moved {src.name} to {dest_dir}"}
+
 # 7. API: Get Text File Content
 @app.get("/api/text")
 async def get_text_file(path: str):
